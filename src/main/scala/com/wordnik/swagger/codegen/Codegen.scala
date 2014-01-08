@@ -20,19 +20,14 @@ import com.wordnik.swagger.model._
 import com.wordnik.swagger.codegen.util.CoreUtils
 import com.wordnik.swagger.codegen.language.CodegenConfig
 import com.wordnik.swagger.codegen.spec.SwaggerSpec._
-
 import org.json4s.jackson.JsonMethods._
 import org.json4s.jackson.Serialization.write
-
 import org.fusesource.scalate._
 import org.fusesource.scalate.layout.DefaultLayoutStrategy
 import org.fusesource.scalate.mustache._
 import org.fusesource.scalate.support.ScalaCompiler
-
 import java.io.{ File, FileWriter, InputStream }
-
 import org.apache.commons.io.FileUtils
-
 import scala.io.Source
 import scala.collection.mutable.{ HashMap, ListBuffer, HashSet }
 import scala.collection.JavaConversions._
@@ -44,7 +39,7 @@ object Codegen {
 class Codegen(config: CodegenConfig) {
   implicit val formats = SwaggerSerializers.formats("1.2")
 
-  def generateSource(bundle: Map[String, AnyRef], templateFile: String): String = {
+  def generateSource(bundle: Map[String, AnyRef], templateFile: String, allModels: Option[Map[String,Model]] = None): String = {
     val allImports = new HashSet[String]
     val includedModels = new HashSet[String]
     val modelList = new ListBuffer[Map[String, AnyRef]]
@@ -54,7 +49,7 @@ class Codegen(config: CodegenConfig) {
       case e: List[Tuple2[String, Model]] => {
         e.foreach(m => {
           includedModels += m._1
-          val modelMap = modelToMap(m._1, m._2)
+          val modelMap = modelToMap(m._1, m._2, allModels)
           modelMap.getOrElse("imports", None) match {
             case im: Set[Map[String, String]] => im.foreach(m => m.map(e => allImports += e._2))
             case None =>
@@ -399,7 +394,7 @@ class Codegen(config: CodegenConfig) {
     config.processApiMap(properties.toMap)
   }
 
-  def modelToMap(className: String, model: Model): Map[String, AnyRef] = {
+  def modelToMap(className: String, model: Model, allModels: Option[Map[String,Model]] = None): Map[String, AnyRef] = {
     val data: HashMap[String, AnyRef] =
       HashMap(
         "classname" -> config.toModelName(className),
@@ -407,78 +402,127 @@ class Codegen(config: CodegenConfig) {
         "modelPackage" -> config.modelPackage,
         "newline" -> "\n")
 
+    var baseModel: Option[Model] = None
+    if (model.baseModel != None) {
+      if (allModels != None) {
+        baseModel = allModels.get.get(model.baseModel.get)
+      }
+      data("baseModel") = model.baseModel.get
+    }
+  
+    if (model.discriminator != None) {
+      data("discriminator") = model.discriminator.get
+    }
+
+    if (model.isEnum) {
+      data("isEnum") = true.asInstanceOf[AnyRef]
+      data("enumValues") = model.enumValues.get
+    }
+    
+    if (model.subTypes != None) {
+      data("subTypes") = model.subTypes.get.map(subType =>
+        subType.indexOf(className) match {
+          case -1 => None
+          case index => Some(Map("subType" -> subType, "discriminatorValue" -> subType.substring(0, index).toUpperCase))
+        }).flatten
+    }
+    
     val l = new ListBuffer[AnyRef]
 
     val imports = new HashSet[AnyRef]
     model.properties.map(prop => {
-      val propertyDocSchema = prop._2
-      val dt = propertyDocSchema.`type`
+      var parentHasProperty = false
+      if (baseModel != None) {
+        val parentProperty = baseModel.get.properties.find(parentProp => parentProp._1 == prop._1)
+        parentHasProperty = (parentProperty != None)
+      }
+        
+      if (!parentHasProperty) {
+        val propertyDocSchema = prop._2
+        var dt = propertyDocSchema.`type`
 
-      var baseType = dt
-      // import the object inside the container
-      if (propertyDocSchema.items != null) {
-        // import the container
-        imports += Map("import" -> dt)
-        propertyDocSchema.items match {
-          case Some(items) => baseType = items.ref.getOrElse(items.`type`)
-          case _ =>
+        var baseType = dt
+
+        val isMap = (if (isMapType(propertyDocSchema.`type`)) true else None)
+        if (isMap == true) {
+          val mapPattern = "(.*)\\[(.*),(.*)\\]".r  
+          try {
+            val mapPattern(mapType, keyType, valueType) = dt
+            imports += Map("import" -> mapType)
+            baseType = valueType
+          } catch {
+            case e: MatchError => 
+          }
+        } else {
+          // import the object inside the container
+          if (propertyDocSchema.items != None) {
+            // import the container
+            imports += Map("import" -> dt)
+            propertyDocSchema.items match {
+              case Some(items) => baseType = items.ref.getOrElse(items.`type`)
+              case _ =>
+            }
+          }
         }
-      }
-      baseType = config.typeMapping.contains(baseType) match {
-        case true => config.typeMapping(baseType)
-        case false => {
-          imports += Map("import" -> config.toDeclaredType(baseType))
-          baseType
+
+        baseType = config.typeMapping.contains(baseType) match {
+          case true => config.typeMapping(baseType)
+          case false => {
+            imports += Map("import" -> config.toDeclaredType(baseType))
+            baseType
+          }
         }
-      }
-      (config.defaultIncludes ++ config.languageSpecificPrimitives).toSet.contains(baseType) match {
-        case true =>
-        case _ => {
-          imports += Map("import" -> baseType)
+        (config.defaultIncludes ++ config.languageSpecificPrimitives).toSet.contains(baseType) match {
+          case true =>
+          case _ => {
+            imports += Map("import" -> baseType)
+          }
         }
+
+        val isList = (if (isListType(propertyDocSchema.`type`)) true else None)
+        val isNotContainer = if (!isListType(propertyDocSchema.`type`) && !isMapType(propertyDocSchema.`type`)) true else None
+        val isContainer = if (isListType(propertyDocSchema.`type`) || isMapType(propertyDocSchema.`type`)) true else None
+
+        val isDiscriminator = if (model.discriminator != None && prop._1 == model.discriminator.get) true else None
+
+        val properties =
+          HashMap(
+            "name" -> config.toVarName(prop._1),
+            "nameSingular" -> {
+              val name = config.toVarName(prop._1)
+              if (name.endsWith("s") && name.length > 1) name.substring(0, name.length - 1) else name
+            },
+            "baseType" -> {
+              if (primitives.contains(baseType))
+                baseType
+              else
+                config.modelPackage match {
+                  case Some(p) => p + "." + baseType
+                  case _ => baseType
+                }
+            },
+            "baseTypeVarName" -> config.toVarName(baseType),
+            "baseName" -> prop._1,
+            "datatype" -> config.toDeclaration(propertyDocSchema)._1,
+            "defaultValue" -> config.toDeclaration(propertyDocSchema)._2,
+            "description" -> propertyDocSchema.description,
+            "notes" -> propertyDocSchema.description,
+            (if(propertyDocSchema.required) "required" else "isNotRequired") -> "true",
+            "getter" -> config.toGetter(prop._1, config.toDeclaration(propertyDocSchema)._1),
+            "setter" -> config.toSetter(prop._1, config.toDeclaration(propertyDocSchema)._1),
+            "isList" -> isList,
+            "isMap" -> isMap,
+            "isContainer" -> isContainer,
+            "isNotContainer" -> isNotContainer,
+            "hasMore" -> "true",
+            "isDiscriminator" -> isDiscriminator)
+        (config.languageSpecificPrimitives.contains(baseType) || primitives.contains(baseType)) match {
+          case true => properties += "isPrimitiveType" -> "true"
+          case _ => properties += "complexType" -> config.toModelName(baseType)
+        }
+
+        l += properties
       }
-
-      val isList = (if (isListType(propertyDocSchema.`type`)) true else None)
-      val isMap = (if (isMapType(propertyDocSchema.`type`)) true else None)
-      val isNotContainer = if (!isListType(propertyDocSchema.`type`) && !isMapType(propertyDocSchema.`type`)) true else None
-      val isContainer = if (isListType(propertyDocSchema.`type`) || isMapType(propertyDocSchema.`type`)) true else None
-
-      val properties =
-        HashMap(
-          "name" -> config.toVarName(prop._1),
-          "nameSingular" -> {
-            val name = config.toVarName(prop._1)
-            if (name.endsWith("s") && name.length > 1) name.substring(0, name.length - 1) else name
-          },
-          "baseType" -> {
-            if (primitives.contains(baseType))
-              baseType
-            else
-              config.modelPackage match {
-                case Some(p) => p + "." + baseType
-                case _ => baseType
-              }
-          },
-          "baseTypeVarName" -> config.toVarName(baseType),
-          "baseName" -> prop._1,
-          "datatype" -> config.toDeclaration(propertyDocSchema)._1,
-          "defaultValue" -> config.toDeclaration(propertyDocSchema)._2,
-          "description" -> propertyDocSchema.description,
-          "notes" -> propertyDocSchema.description,
-          (if(propertyDocSchema.required) "required" else "isNotRequired") -> "true",
-          "getter" -> config.toGetter(prop._1, config.toDeclaration(propertyDocSchema)._1),
-          "setter" -> config.toSetter(prop._1, config.toDeclaration(propertyDocSchema)._1),
-          "isList" -> isList,
-          "isMap" -> isMap,
-          "isContainer" -> isContainer,
-          "isNotContainer" -> isNotContainer,
-          "hasMore" -> "true")
-      (config.languageSpecificPrimitives.contains(baseType) || primitives.contains(baseType)) match {
-        case true => properties += "isPrimitiveType" -> "true"
-        case _ => properties += "complexType" -> config.toModelName(baseType)
-      }
-
-      l += properties
     })
     l.size match {
       case 0 =>

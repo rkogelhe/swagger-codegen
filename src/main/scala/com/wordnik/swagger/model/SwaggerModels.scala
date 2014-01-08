@@ -52,7 +52,10 @@ case class Model(
   var properties: LinkedHashMap[String, ModelProperty],
   description: Option[String] = None,
   baseModel: Option[String] = None,
-  discriminator: Option[String] = None)
+  discriminator: Option[String] = None,
+  subTypes: Option[List[String]] = None,
+  isEnum: Boolean = false,
+  enumValues: Option[List[String]] = None)
 
 case class ModelProperty(
   var `type`: String,
@@ -66,7 +69,8 @@ case class ModelProperty(
 case class ModelRef(
   `type`: String,
   ref: Option[String] = None,
-  qualifiedType: Option[String] = None)
+  qualifiedType: Option[String] = None,
+  allowableValues: AllowableValues = AnyAllowableValues)
 
 case class ApiListing (
   apiVersion: String,

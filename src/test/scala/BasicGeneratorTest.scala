@@ -53,7 +53,7 @@ class BasicGeneratorTest extends FlatSpec with ShouldMatchers {
     allModels.size should be (5)
     ops.size should be (16)
 
-    val operations = ops.map(op => (op._2, op._3)).toMap
+    val operations = ops.map(op => (op._3, op._4)).toMap
 
     (operations.keys.toSet & 
     Set("/pet.{format}/findByTags", "/user.{format}/createWithArray", "/user.{format}/createWithList", 

@@ -17,11 +17,9 @@
 package com.wordnik.swagger.codegen.util
 
 import com.wordnik.swagger.model._
-
-import scala.collection.mutable.{ HashSet, ListBuffer, HashMap }
+import scala.collection.mutable.{ HashSet, ListBuffer, HashMap, LinkedHashMap }
 import scala.collection.JavaConversions._
 import com.wordnik.swagger.codegen.spec.SwaggerSpec._
-
 import scala.io.Source
 import scala.collection.mutable
 import scala.annotation.tailrec
@@ -52,6 +50,10 @@ object CoreUtils {
     def declNm(nm: String) =
       typeMapping.foldLeft(nm)((n, kv) => ("\\b"+kv._1+"\\b").r.replaceAllIn(n, kv._2))
     val modelObjects = sd.models.map(_.foldLeft(Map.empty[String, Model])(_ + _)) getOrElse Map.empty
+
+    // Comment this out as we want to generate code for all models
+
+    /*
     // return types
     val modelNames = sd.apis.foldLeft(Set.empty[String]) { (acc, api) =>
       api.operations.foldLeft(acc){ _ ++ extractModelNames(_) }
@@ -64,14 +66,71 @@ object CoreUtils {
     // look inside top-level models
     val sn = subNames(requiredModels.toMap, modelObjects, Set.empty, typeMapping)
     val subModels = modelObjects.filter(obj => sn.contains(obj._1))
+    */
+
     val ex = excludes ++ primitives
 
     for {
-      (k, v) <- requiredModels ++ subModels
+      (k, v) <- modelObjects // requiredModels ++ subModels
       if (!ex.contains(k))
     } yield k -> v.copy(properties = v.properties.map(kv => kv._1 -> kv._2.copy(`type` = declNm(kv._2.`type`))))
   }
 
+  def extractPropertyEnums(models: List[Model]): HashMap[String, Model] = {
+    var result = HashMap[String, Model]()
+    for (model <- models) {
+      for (property <- model.properties.values()) {
+      	property.allowableValues match {
+            case allowableValues: AllowableListValues => 
+              result(property.`type`) = Model(id=property.`type`, 
+                                              name="", 
+                                              qualifiedType=property.`type`, 
+                                              properties=LinkedHashMap.empty,
+                                              isEnum=true,
+                                              enumValues=Some(allowableValues.values))
+            case _ =>
+      	}
+      	property.items match {
+      	  case Some(modelRef) =>
+      	    modelRef.allowableValues match {
+      	      case allowableValues: AllowableListValues => 
+      	      	modelRef.ref match {
+      	      	  case Some(ref) => result(ref) = Model(id=ref, 
+                                                          name="", 
+                                                          qualifiedType=ref, 
+                                                          properties=LinkedHashMap.empty,
+                                                          isEnum=true,
+                                                          enumValues=Some(allowableValues.values))
+      	      	  case _ => 
+      	      	}
+              case _ =>
+      	    }
+      	  case _ =>
+      	}
+      }
+    }
+    result
+  }
+  
+  def extractParameterEnums(operations: List[Operation]) : HashMap[String, Model] = {
+    var result = HashMap[String, Model]()
+    for (operation <- operations) {
+      for (parameter <- operation.parameters) {
+        parameter.allowableValues match {
+          case allowableValues: AllowableListValues => 
+            result(parameter.dataType) = Model(id=parameter.dataType, 
+                                               name="", 
+                                               qualifiedType=parameter.dataType, 
+                                               properties=LinkedHashMap.empty,
+                                               isEnum=true,
+                                               enumValues=Some(allowableValues.values))
+          case _ =>
+        }
+      }
+    }
+    result
+  }
+  
   def subNames(requiredModels: Map[String, Model], allModels: Map[String, Model], acc: Set[String] = Set.empty, typeMapping: Map[String, String]): Set[String] = {
      requiredModels.foldLeft(acc) { case (subNames, (_, m)) =>
        recurseModel(m.properties.toList, allModels, subNames + typeMapping.getOrElse(m.id, m.id), typeMapping)

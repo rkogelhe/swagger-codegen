@@ -24,6 +24,9 @@ abstract class CodegenConfig {
   /*
    * abstract methods
    */
+  // Should the code attempt to validate the SSL server certificate when retrieving the API description?
+  def checkServerCert: Boolean = true
+  
   def packageName: String
   def templateDir: String
   def destinationDir: String

@@ -65,7 +65,7 @@ abstract class BasicGenerator extends CodegenConfig with PathUtil {
     }
     val doc = {
       try {
-        ResourceExtractor.fetchListing(getResourcePath(host), authorization)
+        ResourceExtractor.fetchListing(getResourcePath(host), authorization, checkServerCert)
       } catch {
         case e: Exception => throw new Exception("unable to read from " + host, e)
       }
@@ -77,7 +77,7 @@ abstract class BasicGenerator extends CodegenConfig with PathUtil {
     val apiReferences = doc.apis
     if (apiReferences == null)
       throw new Exception("No APIs specified by resource")
-    val apis = ApiExtractor.fetchApiListings(doc.swaggerVersion, basePath, apiReferences, authorization)
+    val apis = ApiExtractor.fetchApiListings(doc.swaggerVersion, basePath, apiReferences, authorization, checkServerCert)
 
     SwaggerSerializers.validationMessages.filter(_.level == ValidationMessage.ERROR).size match {
       case i: Int if i > 0 => {
@@ -97,9 +97,15 @@ abstract class BasicGenerator extends CodegenConfig with PathUtil {
 
     val allModels = new HashMap[String, Model]
     val operations = extractApiOperations(apis, allModels)
+    val modelEnums = CoreUtils.extractPropertyEnums(allModels.values.toList)
+    allModels ++= modelEnums 
+    
+    val operationEnums = CoreUtils.extractParameterEnums(operations.map(op => op._4))
+    allModels ++= operationEnums
+    
     val operationMap = groupOperationsToFiles(operations)
     val modelBundle = prepareModelMap(allModels.toMap)
-    val modelFiles = bundleToSource(modelBundle, modelTemplateFiles.toMap)
+    val modelFiles = bundleToSource(modelBundle, modelTemplateFiles.toMap, Some(allModels.toMap))
 
     modelFiles.map(m => {
       val filename = m._1
@@ -133,18 +139,18 @@ abstract class BasicGenerator extends CodegenConfig with PathUtil {
   }
 
   def extractApiOperations(apiListings: List[ApiListing], allModels: HashMap[String, Model] )(implicit basePath:String) = {
-    val output = new ListBuffer[(String, String, Operation)]
+    val output = new ListBuffer[(String, String, String, Operation)]
     apiListings.foreach(apiDescription => {
       val basePath = apiDescription.basePath
       val resourcePath = apiDescription.resourcePath
       if(apiDescription.apis != null) {
         apiDescription.apis.foreach(api => {
           for ((apiPath, operation) <- ApiExtractor.extractApiOperations(basePath, api)) {
-            output += Tuple3(basePath, apiPath, operation)
+            output += Tuple4(basePath, resourcePath, apiPath, operation)
           }
         })
       }
-      output.map(op => processApiOperation(op._2, op._3))
+      output.map(op => processApiOperation(op._2, op._4))
       allModels ++= CoreUtils.extractApiModels(apiDescription)
     })
     output.toList
@@ -197,11 +203,11 @@ abstract class BasicGenerator extends CodegenConfig with PathUtil {
     }).flatten.toList
   }
 
-  def bundleToSource(bundle:List[Map[String, AnyRef]], templates: Map[String, String]): List[(String, String)] = {
+  def bundleToSource(bundle:List[Map[String, AnyRef]], templates: Map[String, String], allModels: Option[Map[String, Model]] = None): List[(String, String)] = {
     val output = new ListBuffer[(String, String)]
     bundle.foreach(m => {
       for ((file, suffix) <- templates) {
-        output += Tuple2(m("outputDirectory").toString + File.separator + m("filename").toString + suffix, codegen.generateSource(m, file))
+        output += Tuple2(m("outputDirectory").toString + File.separator + m("filename").toString + suffix, codegen.generateSource(m, file, allModels))
       }
     })
     output.toList
@@ -219,10 +225,10 @@ abstract class BasicGenerator extends CodegenConfig with PathUtil {
     println("wrote " + filename)
   }
 
-  def groupOperationsToFiles(operations: List[(String, String, Operation)]): Map[(String, String), List[(String, Operation)]] = {
+  def groupOperationsToFiles(operations: List[(String, String, String, Operation)]): Map[(String, String), List[(String, Operation)]] = {
     val opMap = new HashMap[(String, String), ListBuffer[(String, Operation)]]
-    for ((basePath, apiPath, operation) <- operations) {
-      val className = resourceNameFromFullPath(apiPath)
+    for ((basePath, resourcePath, apiPath, operation) <- operations) {
+      val className = resourceNameFromPath(resourcePath)
       val listToAddTo = opMap.getOrElse((basePath, className), {
         val l = new ListBuffer[(String, Operation)]
         opMap += (basePath, className) -> l

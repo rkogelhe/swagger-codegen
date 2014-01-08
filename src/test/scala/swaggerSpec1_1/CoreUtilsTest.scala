@@ -47,7 +47,7 @@ class CoreUtilsTest extends FlatSpec with ShouldMatchers {
   it should "find required models" in {
   	val apis = CoreUtilsTest.sampleApis1
   	val models = CoreUtils.extractApiModels(apis.head)
-  	models.size should be (5)
+  	models.size should be (6)
   }
 
   it should "find required models from a nested list" in {

@@ -28,7 +28,7 @@ import scala.io._
 import scala.collection.mutable.{ ListBuffer, HashMap, HashSet }
 
 object ApiExtractor extends RemoteUrl {
-  def fetchApiListings(version: String, basePath: String, apis: List[ApiListingReference], authorization: Option[AuthorizationValue] = None): List[ApiListing] = {
+  def fetchApiListings(version: String, basePath: String, apis: List[ApiListingReference], authorization: Option[AuthorizationValue] = None, checkServerCert: Boolean = true): List[ApiListing] = {
     implicit val formats = SwaggerSerializers.formats(version)
     (for (api <- apis) yield {
       try{
@@ -36,7 +36,7 @@ object ApiExtractor extends RemoteUrl {
           case true => {
             val path = if(api.path.startsWith("http")) api.path
             else basePath + api.path
-            urlToString(path.replaceAll(".\\{format\\}", ".json"), authorization)
+            urlToString(path.replaceAll(".\\{format\\}", ".json"), authorization, checkServerCert)
           }
           case false => Source.fromFile((basePath + api.path).replaceAll(".\\{format\\}", ".json")).mkString
         }
@@ -56,12 +56,12 @@ object ApiExtractor extends RemoteUrl {
     }).flatten.toList
   }
 
-  def extractApiOperations(version: String, basePath: String, references: List[ApiListingReference], authorization: Option[AuthorizationValue] = None) = {
+  def extractApiOperations(version: String, basePath: String, references: List[ApiListingReference], authorization: Option[AuthorizationValue] = None, checkServerCert: Boolean = true) = {
     implicit val formats = SwaggerSerializers.formats(version)
     for (api <- references) yield {
       val json = basePath.startsWith("http") match {
         case true => {
-          urlToString((basePath + api.path).replaceAll(".\\{format\\}", ".json"), authorization)
+          urlToString((basePath + api.path).replaceAll(".\\{format\\}", ".json"), authorization, checkServerCert)
         }
         case false => Source.fromFile((basePath + api.path).replaceAll(".\\{format\\}", ".json")).mkString
       }

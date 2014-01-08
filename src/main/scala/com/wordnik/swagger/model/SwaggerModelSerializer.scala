@@ -455,6 +455,19 @@ object SwaggerSerializers {
         case _ =>
       }
 
+      // Handling a bug in how the Java code analyzer sets the 'extends' attribute
+      var baseModel = (json \ "extends").extractOpt[String]
+      if (baseModel != None) {
+        baseModel = Some(baseModel.get.substring(baseModel.get.lastIndexOf(".")+1))
+      }
+      val subTypes = new ListBuffer[String]
+      json \ "subTypes" match {
+        case JArray(entries) => entries.map {
+          case e: JString => subTypes += e.s
+          case _ =>
+        }
+        case _ =>
+      }
       Model(
         (json \ "id").extractOrElse({
           !!(json, MODEL, "id", "missing required field", ERROR)
@@ -463,7 +476,10 @@ object SwaggerSerializers {
         (json \ "name").extractOrElse(""),
         (json \ "qualifiedType").extractOrElse((json \ "id").extractOrElse("")),
         output,
-        (json \ "description").extractOpt[String]
+        (json \ "description").extractOpt[String],
+        baseModel,
+        (json \ "discriminator").extractOpt[String],
+        if (subTypes.size > 0) Some(subTypes.toList) else None
       )
     }, {
     case x: Model =>
@@ -580,22 +596,59 @@ object SwaggerSerializers {
       }
       val jsonSchemaType = jsonSchemaTypeMap.getOrElse((`type`, format), `type`)
 
+      val output = new ListBuffer[String]
+      json \ "enum" match {
+        case JArray(entries) => entries.map {
+          case e: JInt => output += e.num.toString
+          case e: JBool => output += e.value.toString
+          case e: JString => output += e.s
+          case e: JDouble => output += e.num.toString
+          case _ =>
+        }
+        case _ =>
+      }
+      val allowableValues = {
+        if(output.size > 0) AllowableListValues(output.toList)
+        else {
+          val min = (json \ "min") match {
+            case e: JObject => e.extract[String]
+            case _ => ""
+          }
+          val max = (json \ "max") match {
+            case e: JObject => e.extract[String]
+            case _ => ""
+          }
+          if(min != "" && max != "")
+            AllowableRangeValues(min, max)
+          else
+            AnyAllowableValues
+        }
+      }
       ModelRef(
-        jsonSchemaType match {
+        `type` = jsonSchemaType match {
           case e: String if(e != "") => e
           case _ => null
         },
-        (json \ "$ref").extractOpt[String]
+        ref = (json \ "$ref").extractOpt[String],
+        allowableValues = allowableValues
       )
     }, {
       case x: ModelRef =>
-      ("type" -> {
+      val output = ("type" -> {
         x.`type` match {
           case e:String => Some(e)
           case _ => None
         }
       }) ~
       ("$ref" -> x.ref)
+
+      x.allowableValues match {
+        case AllowableListValues(values, "LIST") => 
+          output ~ ("enum" -> Extraction.decompose(values))
+        case AllowableRangeValues(min, max)  => 
+          output ~ ("minimum" -> min) ~ ("maximum" -> max)
+        case _ => output
+      }
     }
   ))
 

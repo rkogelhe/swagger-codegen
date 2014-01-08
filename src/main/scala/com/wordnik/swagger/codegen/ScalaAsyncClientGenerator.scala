@@ -327,7 +327,7 @@ class ScalaAsyncClientGenerator(cfg: SwaggerGenConfig) extends BasicGenerator {
 
     val doc = {
       try {
-        ResourceExtractor.fetchListing(getResourcePath(host), authorization)
+        ResourceExtractor.fetchListing(getResourcePath(host), authorization, checkServerCert)
       } catch {
         case e: Exception => throw new Exception("unable to read from " + host, e)
       }
@@ -338,7 +338,7 @@ class ScalaAsyncClientGenerator(cfg: SwaggerGenConfig) extends BasicGenerator {
     val apiReferences = doc.apis
     if (apiReferences == null)
       throw new Exception("No APIs specified by resource")
-    val apis = ApiExtractor.fetchApiListings(doc.swaggerVersion, basePath, apiReferences, authorization)
+    val apis = ApiExtractor.fetchApiListings(doc.swaggerVersion, basePath, apiReferences, authorization, checkServerCert)
 
     new SwaggerSpecValidator(doc, apis).validate()
 
@@ -383,18 +383,18 @@ class ScalaAsyncClientGenerator(cfg: SwaggerGenConfig) extends BasicGenerator {
 
 
   override def extractApiOperations(apiListings: List[ApiListing], allModels: mutable.HashMap[String, Model] )(implicit basePath:String) = {
-    val output = new mutable.ListBuffer[(String, String, Operation)]
+    val output = new mutable.ListBuffer[(String, String, String, Operation)]
     apiListings.foreach(apiDescription => {
       val basePath = apiDescription.basePath
       val resourcePath = apiDescription.resourcePath
       if(apiDescription.apis != null) {
         apiDescription.apis.foreach(api => {
           for ((apiPath, operation) <- ApiExtractor.extractApiOperations(basePath, api)) {
-            output += ((basePath, apiPath, operation))
+            output += ((basePath, resourcePath, apiPath, operation))
           }
         })
       }
-      output.map(op => processApiOperation(op._2, op._3))
+      output.map(op => processApiOperation(op._2, op._4))
       allModels ++= CoreUtils.extractApiModels(apiDescription, defaultIncludes, typeMapping)
     })
     output.toList
@@ -456,7 +456,7 @@ class ScalaAsyncClientGenerator(cfg: SwaggerGenConfig) extends BasicGenerator {
     }
   }
 
-  override def bundleToSource(bundle:List[Map[String, AnyRef]], templates: Map[String, String]): List[(String, String)] = {
+  override def bundleToSource(bundle:List[Map[String, AnyRef]], templates: Map[String, String], allModels: Option[Map[String,Model]] = None): List[(String, String)] = {
     bundle.foldLeft(List.empty[(String, String)]) { (acc, m) =>
       templates.foldLeft(acc) { (out, tem) =>
         val (file, suffix) = tem
@@ -477,10 +477,10 @@ class ScalaAsyncClientGenerator(cfg: SwaggerGenConfig) extends BasicGenerator {
     println("wrote " + filename)
   }
 
-  override def groupOperationsToFiles(operations: List[(String, String, Operation)]): Map[(String, String), List[(String, Operation)]] = {
+  override def groupOperationsToFiles(operations: List[(String, String, String, Operation)]): Map[(String, String), List[(String, Operation)]] = {
     val opMap = new mutable.HashMap[(String, String), mutable.ListBuffer[(String, Operation)]]
-    for ((basePath, apiPath, operation) <- operations) {
-      val className = resourceNameFromFullPath(apiPath)
+    for ((basePath, resourcePath, apiPath, operation) <- operations) {
+      val className = resourceNameFromPath(resourcePath)
       if (!cfg.api.excludedApis.exists(_.equalsIgnoreCase(className))) {
         val listToAddTo = opMap.getOrElse((basePath, className), {
           val l = new mutable.ListBuffer[(String, Operation)]

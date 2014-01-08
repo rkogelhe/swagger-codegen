@@ -47,6 +47,7 @@ class BasicJavaGenerator extends BasicGenerator {
     "Array" -> "List",
     "array" -> "List",
     "List" -> "List",
+    "Set" -> "Set",
     "boolean" -> "Boolean",
     "string" -> "String",
     "int" -> "Integer",
@@ -82,7 +83,9 @@ class BasicJavaGenerator extends BasicGenerator {
     "Date" -> "java.util.Date",
     "Array" -> "java.util.*",
     "ArrayList" -> "java.util.*",
-    "List" -> "java.util.*")
+    "List" -> "java.util.*",
+    "Set" -> "java.util.*",
+    "Map" -> "java.util.*")
 
   // package for models
   override def modelPackage = Some("com.wordnik.client.model")
@@ -125,6 +128,9 @@ class BasicJavaGenerator extends BasicGenerator {
           "List" + dt.substring(n).replaceAll("\\[", "<").replaceAll("\\]", ">")
         else if (dt.substring(0, n) == "Set")
           "Set" + dt.substring(n).replaceAll("\\[", "<").replaceAll("\\]", ">")
+        else if (dt.substring(0, n) == "Map")
+          // trim the generic parameters
+          "Map"
         else dt.replaceAll("\\[", "<").replaceAll("\\]", ">")
       }
     }
@@ -164,6 +170,12 @@ class BasicJavaGenerator extends BasicGenerator {
         }
         declaredType += "<" + toDeclaredType(inner) + ">"
       }
+      case "Map" => {
+        val fields = parseMapType(obj.`type`)
+        if (fields != null) {
+          declaredType += "<" + toDeclaredType(fields._2) + "," + toDeclaredType(fields._3) + ">"
+        } 
+      } 
       case _ =>
     }
     (declaredType, defaultValue)
@@ -192,7 +204,25 @@ class BasicJavaGenerator extends BasicGenerator {
         }
         "new ArrayList<" + toDeclaredType(inner) + ">" + "()"
       }
+      case "Map" => {
+        val fields = parseMapType(obj.`type`)
+        if (fields != null) {
+          "new HashMap<" + toDeclaredType(fields._2) + "," + toDeclaredType(fields._3) + ">()"
+        } else {
+          "null"
+        }
+      }
       case _ => "null"
+    }
+  }
+
+  def parseMapType(declaredType: String) = {
+    val mapPattern = "(.*)\\[(.*),(.*)\\]".r  
+    try {
+      val mapPattern(mapType, keyType, valueType) = declaredType
+      (mapType, keyType, valueType)
+    } catch {
+      case e: MatchError => null
     }
   }
 
