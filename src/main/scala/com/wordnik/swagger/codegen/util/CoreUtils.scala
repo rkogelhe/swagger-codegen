@@ -76,7 +76,7 @@ object CoreUtils {
     } yield k -> v.copy(properties = v.properties.map(kv => kv._1 -> kv._2.copy(`type` = declNm(kv._2.`type`))))
   }
 
-  def extractPropertyEnums(models: List[Model]): HashMap[String, Model] = {
+  def extractPropertyEnums(models: List[Model]): Map[String, Model] = {
     var result = HashMap[String, Model]()
     for (model <- models) {
       for (property <- model.properties.values()) {
@@ -109,10 +109,10 @@ object CoreUtils {
       	}
       }
     }
-    result
+    result.filterKeys(k => !primitives.contains(k)).toMap
   }
   
-  def extractParameterEnums(operations: List[Operation]) : HashMap[String, Model] = {
+  def extractParameterEnums(operations: List[Operation]) : Map[String, Model] = {
     var result = HashMap[String, Model]()
     for (operation <- operations) {
       for (parameter <- operation.parameters) {
@@ -128,7 +128,7 @@ object CoreUtils {
         }
       }
     }
-    result
+    result.toMap
   }
   
   def subNames(requiredModels: Map[String, Model], allModels: Map[String, Model], acc: Set[String] = Set.empty, typeMapping: Map[String, String]): Set[String] = {
