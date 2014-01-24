@@ -128,7 +128,7 @@ object CoreUtils {
         }
       }
     }
-    result.toMap
+    result.filterKeys(k => !primitives.contains(k)).toMap
   }
   
   def subNames(requiredModels: Map[String, Model], allModels: Map[String, Model], acc: Set[String] = Set.empty, typeMapping: Map[String, String]): Set[String] = {
