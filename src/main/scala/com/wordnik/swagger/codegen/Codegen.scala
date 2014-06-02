@@ -423,7 +423,8 @@ class Codegen(config: CodegenConfig) {
       data("subTypes") = model.subTypes.get.map(subType =>
         subType.indexOf(className) match {
           case -1 => None
-          case index => Some(Map("subType" -> subType, "discriminatorValue" -> subType.substring(0, index).toUpperCase))
+          case index => Some(Map("subType" -> subType, "discriminatorValue" -> 
+              (subType.substring(0,1) + "[A-Z]".r.replaceAllIn(subType.substring(1, index), {m => "_" + m.group(0)})).toUpperCase))
         }).flatten
     }
     
