@@ -225,6 +225,9 @@ class Codegen(config: CodegenConfig) {
         params += "description" -> param.description
         params += "hasMore" -> "true"
         params += "allowMultiple" -> param.allowMultiple.toString
+        
+        if(param.dataType == "File") params += "isFile" -> "true"
+        else params += "notFile" -> "true"
 
         val u = param.dataType.indexOf("[") match {
           case -1 => config.toDeclaredType(param.dataType)
@@ -362,6 +365,32 @@ class Codegen(config: CodegenConfig) {
         "httpMethod" -> operation.method.toUpperCase,
         "httpMethodLowerCase" -> operation.method.toLowerCase,
         operation.method.toLowerCase -> "true")
+    if (0 < operation.consumes.length) {
+      val o = new ListBuffer[Map[String, String]]
+      for(i <- 0 until operation.consumes.length) {
+        val m = new HashMap[String, String]
+        if(i < (operation.consumes.length - 1))
+          m += "hasMore" -> "true"
+        m += "mediaType" -> operation.consumes(i)
+        o += m.toMap
+      }
+      properties += "consumes" -> o.toList
+    } else {
+      properties += "consumes" -> List(Map("mediaType" -> "application/json"))
+    }
+    if (0 < operation.produces.length) {
+      val o = new ListBuffer[Map[String, String]]
+      for(i <- 0 until operation.produces.length) {
+        val m = new HashMap[String, String]
+        if((i + 1) < operation.produces.length)
+          m += "hasMore" -> "true"
+        m += "mediaType" -> operation.produces(i)
+        o += m.toMap
+      }
+      properties += "produces" -> o.toList
+    } else {
+      properties += "produces" -> List(Map("mediaType" -> "application/json"))
+    }        
     if (requiredParams.size > 0) properties += "requiredParamCount" -> requiredParams.size.toString
     operation.responseClass.indexOf("[") match {
       case -1 => {
