@@ -1,2 +1,2 @@
 SET CSCPATH=%SYSTEMROOT%\Microsoft.NET\Framework\v4.0.30319
-%CSCPATH%\csc /reference:bin/Newtonsoft.Json.dll /target:library /out:bin/{{invokerPackage}}.dll /recurse:src\*.cs /doc:bin/{{invokerPackage}}.xml
+%CSCPATH%\csc /nowarn:1591 /reference:bin/Newtonsoft.Json.dll /reference:"c:\Program Files\Reference Assemblies\Microsoft\WindowsPowerShell\v1.0\System.Management.Automation.dll" /target:library /out:bin/{{invokerPackage}}.dll /recurse:src\*.cs /doc:bin/{{invokerPackage}}.xml

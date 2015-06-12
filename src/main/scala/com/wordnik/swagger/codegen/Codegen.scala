@@ -467,11 +467,13 @@ class Codegen(config: CodegenConfig) {
         parentHasProperty = (parentProperty != None)
       }
         
-      if (!parentHasProperty) {
+      /* if (!parentHasProperty) { */
+      
         val propertyDocSchema = prop._2
         var dt = propertyDocSchema.`type`
 
         var baseType = dt
+        var isListOfEnum: Boolean = false
 
         val isMap = (if (isMapType(propertyDocSchema.`type`)) true else None)
         if (isMap == true) {
@@ -486,6 +488,7 @@ class Codegen(config: CodegenConfig) {
         } else {
           // import the object inside the container
           if (propertyDocSchema.items != None) {
+            isListOfEnum = if (propertyDocSchema.items.get.allowableValues != AnyAllowableValues) true else false
             // import the container
             imports += Map("import" -> dt)
             propertyDocSchema.items match {
@@ -514,6 +517,9 @@ class Codegen(config: CodegenConfig) {
         val isContainer = if (isListType(propertyDocSchema.`type`) || isMapType(propertyDocSchema.`type`)) true else None
 
         val isDiscriminator = if (model.discriminator != None && prop._1 == model.discriminator.get) true else None
+        val isEnum = if (propertyDocSchema.allowableValues != AnyAllowableValues) true else None
+        val isDate = if ((dt == "Date") || (dt == "date")) true else None
+        val isToStringOk = if (!((isEnum == true) || (isDate == true))) true else None
 
         val properties =
           HashMap(
@@ -542,9 +548,14 @@ class Codegen(config: CodegenConfig) {
             "setter" -> config.toSetter(prop._1, config.toDeclaration(propertyDocSchema)._1),
             "isList" -> isList,
             "isMap" -> isMap,
+            "isEnum" -> isEnum,
+            "isDate" -> isDate,
+            "isToStringOk" -> isToStringOk,
+            "isListOfEnum" -> isListOfEnum,
             "isContainer" -> isContainer,
             "isNotContainer" -> isNotContainer,
             "hasMore" -> "true",
+            "parentHasProperty" -> parentHasProperty,
             "isDiscriminator" -> isDiscriminator)
         (config.languageSpecificPrimitives.contains(baseType) || primitives.contains(baseType)) match {
           case true => properties += "isPrimitiveType" -> "true"
@@ -552,7 +563,7 @@ class Codegen(config: CodegenConfig) {
         }
 
         l += properties
-      }
+      /* } */
     })
     l.size match {
       case 0 =>

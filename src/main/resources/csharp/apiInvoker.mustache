@@ -4,17 +4,28 @@
   using System.Linq;
   using System.Net;
   using System.Text;
+  using System.Management.Automation;
   using Newtonsoft.Json;
+  using Newtonsoft.Json.Converters;
 
   namespace {{invokerPackage}} {
     public class ApiInvoker {
-      private static readonly ApiInvoker _instance = new ApiInvoker();
+    
+      private string defaultBasePath;
       private Dictionary<String, String> defaultHeaderMap = new Dictionary<String, String>();
+      private CredentialCache myCache = new CredentialCache();
 
-      public static ApiInvoker GetInstance() {
-        return _instance;
+      public ApiInvoker (string basePath, Dictionary<String, String> headerParams, PSCredential PSCreds ) {
+        defaultBasePath = basePath.EndsWith("/") ? basePath.Substring(0, basePath.Length - 1) : basePath;;
+        foreach (var headerParamsItem in headerParams)
+        {
+            defaultHeaderMap.Add(headerParamsItem.Key, headerParamsItem.Value);
+        }
+        
+        NetworkCredential myCred = PSCreds.GetNetworkCredential();
+        myCache.Add(new Uri(defaultBasePath), "Basic", myCred);
       }
-      
+
       public void addDefaultHeader(string key, string value) {
          defaultHeaderMap.Add(key, value);
       }
@@ -37,14 +48,14 @@
       public static string serialize(object obj) {
         try
         {
-            return obj != null ? JsonConvert.SerializeObject(obj) : null;
+            return obj != null ? JsonConvert.SerializeObject(obj,new JsonSerializerSettings { NullValueHandling = NullValueHandling.Ignore }) : null;
         }
         catch (Exception e) {
           throw new ApiException(500, e.Message);
         }
       }
 
-      public string invokeAPI(string host, string path, string method, Dictionary<String, String> queryParams, object body, Dictionary<String, String> headerParams) {
+      public string invokeAPI(string path, string method, Dictionary<String, String> queryParams, object body, Dictionary<String, String> headerParams) {
         var b = new StringBuilder();
         
         foreach (var queryParamItem in queryParams)
@@ -57,10 +68,10 @@
 
         var querystring = b.ToString();
 
-          host = host.EndsWith("/") ? host.Substring(0, host.Length - 1) : host;
-
-          var client = WebRequest.Create(host + path + querystring);
+          var client = WebRequest.Create(defaultBasePath + path + querystring);
           client.ContentType = "application/json";
+          client.Credentials = this.myCache;
+          client.Method = method;
 
           foreach (var headerParamsItem in headerParams)
           {
@@ -85,14 +96,35 @@
               default:
                   throw new ApiException(500, "unknown method type " + method);         
           }
+          
+          
+          try 
+          {
               var webResponse = (HttpWebResponse) client.GetResponse();
-              if (webResponse.StatusCode != HttpStatusCode.OK) throw new ApiException((int) webResponse.StatusCode, webResponse.StatusDescription);
 
               var responseReader = new StreamReader(webResponse.GetResponseStream());
               var responseData = responseReader.ReadToEnd();
               responseReader.Close();
+  
               return responseData;
+          }
+          catch (WebException e)
+          {
+              HttpWebResponse errWebResponse = (HttpWebResponse) e.Response;
+              var errResponseReader = new StreamReader(errWebResponse.GetResponseStream());
+              var errResponseData = errResponseReader.ReadToEnd();
+              errResponseReader.Close();
+              throw new ApiException((int) errWebResponse.StatusCode, errWebResponse.StatusDescription + ":\n" + errResponseData);
+          }
+
       }
 
+    }
+    public class IsoDateTimeConverterFff : IsoDateTimeConverter
+    {
+        public IsoDateTimeConverterFff()
+        {
+            base.DateTimeFormat = "yyyy-MM-ddTHH:mm:ss.fffZ";
+        }
     }
   }

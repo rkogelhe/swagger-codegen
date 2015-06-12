@@ -2,29 +2,104 @@ using System;
 using System.Text;
 using System.Collections;
 using System.Collections.Generic;
+using Newtonsoft.Json;
+using Newtonsoft.Json.Converters;
+using Newtonsoft.Json.Linq;
+using Com.Pingidentity.Pf;
 
 {{#models}}
 {{#model}}
 namespace {{package}} {
-  public class {{classname}} {
-    {{#vars}}
 
+{{#discriminator}}
+public class Json{{classname}}Converter : JsonConverter
+{
+  public override bool CanConvert(Type objectType)
+  {
+      return typeof({{classname}}).IsAssignableFrom(objectType);
+  }
+
+  public override object ReadJson(JsonReader reader, Type objectType, object existingValue, JsonSerializer serializer)
+  {
+    JObject obj = JObject.Load(reader);
+    string discriminator = (string)obj["{{discriminator}}"];
+    
+    {{classname}} newobj;
+    switch(discriminator)
+    {
+      {{#subTypes}}case "{{discriminatorValue}}":
+        newobj = new {{subType}}();
+        break;
+      {{/subTypes}}
+      default: throw new NotImplementedException();
+    }
+    
+    serializer.Populate(obj.CreateReader(), newobj);
+
+    return newobj;
+  }
+
+  public override void WriteJson(JsonWriter writer, object value, JsonSerializer serializer)
+  {
+      serializer.Serialize(writer, value);
+  }
+  
+  public override bool CanWrite
+  {
+    get
+    {
+        return false;
+    }
+  }
+}
+
+[JsonConverter(typeof(Json{{classname}}Converter))]
+{{/discriminator}}
+public {{#isEnum}}enum {{/isEnum}} {{^isEnum}}class {{/isEnum}} {{classname}} {{#baseModel}}: {{baseModel}} {{/baseModel}}{
+  {{#isEnum}}
+  {{#enumValues}}{{.}}, {{/enumValues}}
+
+  {{/isEnum}}
+
+    {{^isEnum}}
+    {{#vars}}
+    {{^parentHasProperty}}  
     {{#description}}/* {{{description}}} */
     {{/description}}
-    public {{{datatype}}} {{name}} { get; set; }
 
+    {{#isEnum}}
+    [JsonConverter(typeof(StringEnumConverter))]
+    {{/isEnum}}
+    {{#isListOfEnum}}
+    [JsonProperty (ItemConverterType = typeof(StringEnumConverter))]      
+    {{/isListOfEnum}}
+    {{#isDate}}
+    [JsonConverter(typeof(IsoDateTimeConverterFff))]
+    {{/isDate}}
+    public {{{datatype}}} {{name}} { get; set; }
+    {{/parentHasProperty}}
     {{/vars}}
 
     public override string ToString()  {
       var sb = new StringBuilder();
       sb.Append("class {{classname}} {\n");
       {{#vars}}
+      {{#isEnum}}
+      sb.Append("  {{name}}: ").Append({{name}}.ToString("G")).Append("\n");
+      {{/isEnum}}
+      {{#isDate}}
+      sb.Append("  {{name}}: ").Append({{name}}.ToString("yyyy-MM-ddTHH:mm:ss.fffZ")).Append("\n");
+      {{/isDate}}
+      {{#isToStringOk}}
       sb.Append("  {{name}}: ").Append({{name}}).Append("\n");
+      {{/isToStringOk}}
       {{/vars}}
       sb.Append("}\n");
       return sb.ToString();
     }
+    {{/isEnum}}
   }
+
   {{/model}}
   {{/models}}
 }

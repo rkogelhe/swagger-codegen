@@ -58,6 +58,10 @@ trait PathUtil {
   def apiNameFromPath(apiPath: String) = toApiName(nameFromPath(apiPath))
 
   def resourceNameFromPath(resourcePath: String) = {
+  /*
     resourcePath.split("/")(1).split("\\.")(0).replaceAll("/", "")
+  */
+    var upcase = resourcePath.split("/").reverse.map(_.capitalize).mkString("").split("\\.")(0).replaceAll("/", "")
+    upcase(0).toLower + upcase.substring(1)
   }
 }

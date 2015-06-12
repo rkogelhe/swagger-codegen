@@ -45,14 +45,17 @@ class BasicCSharpGenerator extends BasicGenerator {
    * variable declarations.
    */
   override def typeMapping = Map(
+    "Array" -> "List",
     "array" -> "List",
     "boolean" -> "bool",
+    "Set" -> "List",
     "string" -> "string",
     "int" -> "int",
     "float" -> "float",
     "long" -> "long",
     "double" -> "double",
     "object" -> "object",
+    "File" -> "object",
     "Date" -> "DateTime",
     "date" -> "DateTime")
 
@@ -117,6 +120,10 @@ class BasicCSharpGenerator extends BasicGenerator {
       case n: Int => {
         if (dt.substring(0, n) == "Array")
           "List" + dt.substring(n).replaceAll("\\[", "<").replaceAll("\\]", ">")
+        else if (dt.substring(0, n) == "Set")
+          "Set" + dt.substring(n).replaceAll("\\[", "<").replaceAll("\\]", ">")
+        else if (dt.substring(0, n) == "Map")
+          "IDictionary"
         else dt.replaceAll("\\[", "<").replaceAll("\\]", ">")
       }
     }
@@ -145,6 +152,12 @@ class BasicCSharpGenerator extends BasicGenerator {
         }
         declaredType += "<" + toDeclaredType(inner) + ">"
       }
+      case "Map" => {
+        val fields = parseMapType(obj.`type`)
+        if (fields != null) {
+          declaredType += "<" + toDeclaredType(fields._2) + "," + toDeclaredType(fields._3) + ">"
+        } 
+      } 
       case _ =>
     }
     (declaredType, defaultValue)
@@ -173,7 +186,25 @@ class BasicCSharpGenerator extends BasicGenerator {
         }
         "new ArrayList<" + toDeclaredType(inner) + ">" + "()"
       }
+      case "Map" => {
+        val fields = parseMapType(obj.`type`)
+        if (fields != null) {
+          "new Dictionary<" + toDeclaredType(fields._2) + "," + toDeclaredType(fields._3) + ">()"
+        } else {
+          "null"
+        }
+      }
       case _ => "null"
+    }
+  }
+
+  def parseMapType(declaredType: String) = {
+    val mapPattern = "(.*)\\[(.*),(.*)\\]".r  
+    try {
+      val mapPattern(mapType, keyType, valueType) = declaredType
+      (mapType, keyType, valueType)
+    } catch {
+      case e: MatchError => null
     }
   }
 
@@ -198,8 +229,8 @@ class BasicCSharpGenerator extends BasicGenerator {
   // supporting classes
   override def supportingFiles =
     List(
-      ("apiInvoker.mustache", destinationDir + java.io.File.separator + invokerPackage.get.replace(".", java.io.File.separator) + java.io.File.separator, "ApiInvoker.java"),
-      ("apiException.mustache", destinationDir + java.io.File.separator + invokerPackage.get.replace(".", java.io.File.separator) + java.io.File.separator, "ApiException.java"),
+      ("apiInvoker.mustache", destinationDir + java.io.File.separator + invokerPackage.get.replace(".", java.io.File.separator) + java.io.File.separator, "ApiInvoker.cs"),
+      ("apiException.mustache", destinationDir + java.io.File.separator + invokerPackage.get.replace(".", java.io.File.separator) + java.io.File.separator, "ApiException.cs"),
       ("Newtonsoft.Json.dll", "generated-code/csharp/bin", "Newtonsoft.Json.dll"),
       ("compile.mustache", "generated-code/csharp", "compile.bat"))
 }
